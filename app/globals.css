@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #14201a;
+  --color-bottle: #0f3d2e;
+  --color-mint: #e3f0e8;
+  --color-field: #f2f5f1;
+  --color-gold: #b98424;
+  --color-out: #b4412f;
+  --color-in: #1f7a4d;
+  --color-line: #d5ddd6;
+  --font-sans: ui-sans-serif, system-ui, "Segoe UI", "Noto Sans Bengali", Roboto, "Helvetica Neue", sans-serif;
+}
+
+html { -webkit-tap-highlight-color: transparent; }
+body { background: var(--color-field); color: var(--color-ink); font-family: var(--font-sans); }
+.num { font-variant-numeric: tabular-nums; }
+:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 2px; }
+.ledger {
+  background-color: var(--color-bottle);
+  background-image: repeating-linear-gradient(to bottom, transparent 0 27px, rgba(255,255,255,.07) 27px 28px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sheet { animation: rise .18s ease-out; }
+  @keyframes rise { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+}
