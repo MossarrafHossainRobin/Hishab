@@ -5,6 +5,7 @@ import {
   collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp,
 } from 'firebase/firestore';
 import { getFirebase } from '@/lib/firebase';
+import { enablePush, notify, pushState } from '@/lib/push';
 import { MONTHS, todayISO, summarize, monthlyBreakdown, categoryTotals, money } from '@/lib/calc';
 
 const CATS = {
@@ -25,6 +26,8 @@ export default function Home() {
   const [month, setMonth] = useState(todayISO().slice(0, 7));
   const [sheet, setSheet] = useState(false);
   const [form, setForm] = useState(blankForm());
+  const [push, setPush] = useState('checking');
+  const [pushMsg, setPushMsg] = useState('');
 
   useEffect(() => {
     setFb(getFirebase());
@@ -43,6 +46,14 @@ export default function Home() {
   }, []);
 
   useEffect(() => (fb ? onAuthStateChanged(fb.auth, setUser) : undefined), [fb]);
+
+  useEffect(() => {
+    if (!fb || !user) return;
+    pushState().then((st) => {
+      setPush(st);
+      if (st === 'granted') enablePush(fb, user).catch(() => {}); // refresh token silently
+    });
+  }, [fb, user]);
 
   useEffect(() => {
     if (!fb || !user) { setTxs([]); return; }
@@ -88,6 +99,7 @@ export default function Home() {
     e.preventDefault();
     const amount = parseFloat(form.amount);
     if (!(amount > 0)) return;
+    const entry = { ...form };
     // Not awaited on purpose: offline, the server acknowledgement waits for the network
     // but the entry is saved on the device immediately.
     addDoc(collection(fb.db, 'users', user.uid, 'transactions'), {
@@ -97,7 +109,15 @@ export default function Home() {
       note: form.note.trim(),
       date: form.date,
       createdAt: serverTimestamp(),
-    }).catch(() => {});
+    })
+      // Resolves once the server has the entry (immediately online, after sync if saved offline).
+      .then(() =>
+        notify(user, {
+          title: `${entry.type === 'income' ? 'Received' : 'Spent'} ${money(amount)}`,
+          body: `${entry.category}${entry.note.trim() ? `, ${entry.note.trim()}` : ''} on ${entry.date}`,
+        })
+      )
+      .catch(() => {});
     setMonth(form.date.slice(0, 7));
     setView('month');
     setSheet(false);
@@ -107,6 +127,27 @@ export default function Home() {
   const remove = (t) => {
     if (window.confirm(`Delete ${t.category} ${money(t.amount)}?`)) {
       deleteDoc(doc(fb.db, 'users', user.uid, 'transactions', t.id)).catch(() => {});
+    }
+  };
+
+  const turnOn = async () => {
+    setPushMsg('');
+    try {
+      await enablePush(fb, user);
+      setPush('granted');
+    } catch (e) {
+      setPush(await pushState());
+      setPushMsg(e.message);
+    }
+  };
+
+  const sendTest = async () => {
+    setPushMsg('');
+    try {
+      const r = await notify(user, { title: 'Hishab', body: 'Test alert. Notifications are working.', includeSelf: true });
+      setPushMsg(r.sent ? `Test sent to ${r.sent} device(s).` : 'No device is registered yet.');
+    } catch {
+      setPushMsg(online ? 'Could not send the test alert.' : 'You are offline.');
     }
   };
 
@@ -161,6 +202,25 @@ export default function Home() {
       </section>
 
       <div className="space-y-5 px-4 pt-5">
+        {push !== 'checking' && (
+          <section aria-label="Alerts" className="rounded-lg border border-line bg-white p-3 text-sm">
+            {push === 'granted' ? (
+              <p className="flex items-center justify-between gap-3">
+                <span>Alerts are on for this device.</span>
+                <button onClick={sendTest} className="underline">Send a test alert</button>
+              </p>
+            ) : (
+              <>
+                <p className="font-medium">Get an alert on your other devices when you add an entry</p>
+                {push === 'ios-install' && <p className="mt-1 text-ink/70">On iPhone: tap Share, choose Add to Home Screen, then open Hishab from its icon and turn on alerts.</p>}
+                {push === 'unsupported' && <p className="mt-1 text-ink/70">This browser cannot receive alerts. Use Chrome on Android, or the installed app on iPhone (iOS 16.4 or newer).</p>}
+                {push === 'denied' && <p className="mt-1 text-ink/70">Alerts are blocked. Allow notifications for Hishab in your phone settings, then reopen the app.</p>}
+                {push === 'default' && <button onClick={turnOn} className="mt-2 rounded-lg bg-bottle px-3 py-2 font-semibold text-white">Turn on alerts</button>}
+              </>
+            )}
+            {pushMsg && <p role="status" className="mt-2 text-ink/70">{pushMsg}</p>}
+          </section>
+        )}
         <div className="flex items-center gap-2">
           <div className="flex rounded-lg border border-line bg-white p-0.5 text-sm font-medium" role="group" aria-label="Period">
             {['month', 'year'].map((v) => (

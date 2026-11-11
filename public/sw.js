@@ -1,4 +1,4 @@
-const CACHE = 'hishab-v1';
+const CACHE = 'hishab-v2';
 
 // Cache the app shell and its JS/CSS at install so the first offline launch works.
 self.addEventListener('install', (event) => {
@@ -56,5 +56,31 @@ self.addEventListener('fetch', (event) => {
           return res;
         })
     )
+  );
+});
+
+// Push notifications (Firebase Cloud Messaging data message).
+// iOS requires a visible notification for every push, so always show one.
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try { payload = event.data ? event.data.json() : {}; } catch { payload = {}; }
+  const d = { ...(payload.notification || {}), ...(payload.data || {}) };
+  event.waitUntil(
+    self.registration.showNotification(d.title || 'Hishab', {
+      body: d.body || '',
+      icon: '/icon-192.png',
+      data: { url: d.url || '/' },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+      const open = wins[0];
+      return open ? open.focus() : self.clients.openWindow(url);
+    })
   );
 });
